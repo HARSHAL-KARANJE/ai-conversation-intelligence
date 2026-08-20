@@ -1,7 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Prisma schema for the AI Conversation Intelligence project
+// This file is the blueprint for our PostgreSQL database.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,4 +8,578 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+
+// ============================================================
+// USER
+// ============================================================
+// A User is a person who has an account and can use the product.
+model User {
+  // Primary key: uniquely identifies every user
+  userId String @id @default(uuid())
+
+  // Basic user information
+  name  String
+  email String @unique
+
+  // Stores the hashed password, NOT the actual password
+  passwordHash String
+
+  // Current state of the user
+  status String @default("ACTIVE")
+
+  // Automatically stores when the user is created
+  createdAt DateTime @default(now())
+
+  // Automatically updates whenever the user record changes
+  updatedAt DateTime @updatedAt
+
+  // One user can belong to multiple workspaces
+  memberships WorkspaceMember[]
+}
+
+
+// ============================================================
+// WORKSPACE
+// ============================================================
+// A Workspace is a company's/project's private working space.
+// All contacts, conversations, documents and tasks are isolated
+// inside the workspace.
+model Workspace {
+  // Primary key: uniquely identifies each workspace
+  workspaceId String @id @default(uuid())
+
+  // Basic workspace information
+  name     String
+  slug     String @unique
+  timezone String
+
+  // Subscription / workspace state
+  plan   String
+  status String @default("ACTIVE")
+
+  // Automatically tracks creation and updates
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One workspace can have many members
+  members WorkspaceMember[]
+
+  // One workspace can have many contacts/leads
+  contacts Contact[]
+
+  // One workspace can store many company documents
+  documents Document[]
+
+  // One workspace can have multiple platform integrations
+  integrations Integration[]
+
+  // One workspace can have many follow-up tasks
+  tasks Task[]
+}
+
+
+// ============================================================
+// WORKSPACE MEMBER
+// ============================================================
+// WorkspaceMember is the relationship between a User and a Workspace.
+// It answers: "Which user has access to which workspace, and what role?"
+//
+// Example:
+// Harshal -> DomiCo Workspace -> OWNER
+// Rahul   -> DomiCo Workspace -> MEMBER
+model WorkspaceMember {
+  // Primary key
+  workspaceMemberId String @id @default(uuid())
+
+  // Foreign key -> User
+  userId String
+
+  // Foreign key -> Workspace
+  workspaceId String
+
+  // Role of the user inside this workspace
+  role String @default("MEMBER")
+
+  // Membership state
+  status String @default("ACTIVE")
+
+  // When the user joined the workspace
+  joinedAt DateTime @default(now())
+
+  // This membership belongs to one user
+  user User @relation(fields: [userId], references: [userId])
+
+  // This membership belongs to one workspace
+  workspace Workspace @relation(fields: [workspaceId], references: [workspaceId])
+
+  // The same user cannot be added to the same workspace twice
+  @@unique([userId, workspaceId])
+}
+
+
+// ============================================================
+// CONTACT
+// ============================================================
+// A Contact is a lead/customer that the workspace communicates with.
+// A Contact does NOT need to have an account in our application.
+//
+// Example:
+// User = Harshal (uses our application)
+// Contact = Rahul (lead communicating with the company)
+model Contact {
+  // Primary key: uniquely identifies each contact
+  contactId String @id @default(uuid())
+
+  // Foreign key -> Workspace
+  workspaceId String
+
+  // Contact information
+  fullName String
+  email    String?
+  phone    String?
+  company  String?
+  jobTitle String?
+
+  // Helps track the contact in the relationship/sales journey
+  lifecycleStage String?
+
+  // Current state of the contact
+  status String @default("ACTIVE")
+
+  // Automatically tracks creation and updates
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Each contact belongs to one workspace
+  workspace Workspace @relation(fields: [workspaceId], references: [workspaceId])
+
+  // One contact can have multiple social profiles
+  socialProfiles SocialProfile[]
+
+  // One contact can have multiple conversations
+  conversations Conversation[]
+
+  // AI-extracted facts about this contact
+  facts ContactFact[]
+
+  // AI-generated scoring records for this contact
+  scores ContactScore[]
+
+  // Follow-up tasks related to this contact
+  tasks Task[]
+}
+
+
+// ============================================================
+// SOCIAL PROFILE
+// ============================================================
+// A Contact can have different identities on different platforms.
+//
+// Example:
+// Rahul -> Instagram profile
+// Rahul -> LinkedIn profile
+// Rahul -> WhatsApp profile
+model SocialProfile {
+  // Primary key
+  socialProfileId String @id @default(uuid())
+
+  // Foreign key -> Contact
+  contactId String
+
+  // Foreign key -> Platform
+  platformId String
+
+  // ID given by the external platform
+  platformUserId String?
+
+  // Username on that platform
+  username String?
+
+  // Profile URL
+  profileUrl String?
+
+  // Whether this is the main profile for this contact
+  isPrimary Boolean @default(false)
+
+  // This profile belongs to one contact
+  contact Contact @relation(fields: [contactId], references: [contactId])
+
+  // This profile belongs to one platform
+  platform Platform @relation(fields: [platformId], references: [platformId])
+
+  // A social profile can have multiple conversations
+  conversations Conversation[]
+}
+
+
+// ============================================================
+// PLATFORM
+// ============================================================
+// Represents an external platform such as Instagram, LinkedIn,
+// WhatsApp, Gmail, etc.
+model Platform {
+  // Primary key: uniquely identifies a platform
+  platformId String @id @default(uuid())
+
+  // Platform information
+  name String
+  type String
+  status String @default("ACTIVE")
+
+  // One platform can have many social profiles
+  socialProfiles SocialProfile[]
+
+  // One platform can be connected to many workspaces
+  integrations Integration[]
+}
+
+
+// ============================================================
+// INTEGRATION
+// ============================================================
+// Integration represents a workspace's connection to a platform.
+//
+// Example:
+// DomiCo Workspace -> Integration -> Instagram
+//
+// The integration stores information about that connection.
+model Integration {
+  // Primary key: uniquely identifies this integration
+  integrationId String @id @default(uuid())
+
+  // Foreign key -> Workspace
+  workspaceId String
+
+  // Foreign key -> Platform
+  platformId String
+
+  // Information about the connection
+  status String @default("ACTIVE")
+
+  // When the platform was connected
+  connectedAt DateTime @default(now())
+
+  // This integration belongs to one workspace
+  workspace Workspace @relation(fields: [workspaceId], references: [workspaceId])
+
+  // This integration belongs to one platform
+  platform Platform @relation(fields: [platformId], references: [platformId])
+}
+
+
+// ============================================================
+// CONVERSATION
+// ============================================================
+// Stores the conversation/thread between the workspace and a lead.
+//
+// Flow:
+// Contact -> Conversation -> Messages
+model Conversation {
+  // Primary key: uniquely identifies each conversation
+  conversationId String @id @default(uuid())
+
+  // Foreign key -> Contact
+  contactId String
+
+  // Optional foreign key -> SocialProfile
+  // Tells us which social identity/platform this conversation came through
+  socialProfileId String?
+
+  // Basic conversation information
+  channelType String
+  status      String @default("ACTIVE")
+
+  // When the conversation started
+  startedAt DateTime @default(now())
+
+  // Updated whenever a new message arrives
+  lastMessageAt DateTime?
+
+  // This conversation belongs to one contact
+  contact Contact @relation(fields: [contactId], references: [contactId])
+
+  // This conversation can optionally be associated with one social profile
+  socialProfile SocialProfile? @relation(fields: [socialProfileId], references: [socialProfileId])
+
+  // One conversation contains many messages
+  messages Message[]
+
+  // One conversation can have multiple AI-generated summaries
+  summaries ConversationSummary[]
+}
+
+
+// ============================================================
+// MESSAGE
+// ============================================================
+// A Conversation is the whole discussion/thread.
+// A Message is one individual thing someone says inside that conversation.
+model Message {
+  // Primary key: uniquely identifies each message
+  messageId String @id @default(uuid())
+
+  // Foreign key -> Conversation
+  conversationId String
+
+  // Who sent the message: CUSTOMER, USER, AI, etc.
+  senderType String
+
+  // Type of message: TEXT, IMAGE, FILE, etc.
+  messageType String @default("TEXT")
+
+  // Actual message content
+  content String
+
+  // True if the message came from the contact/lead
+  isIncoming Boolean
+
+  // When the message was sent
+  sentAt DateTime @default(now())
+
+  // This message belongs to one conversation
+  conversation Conversation @relation(fields: [conversationId], references: [conversationId])
+
+  // One message can have multiple AI-generated suggestions
+  aiSuggestions AiSuggestion[]
+}
+
+
+// ============================================================
+// AI SUGGESTION
+// ============================================================
+// AI_Suggestion is the output generated by the AI after reading
+// the message and relevant context.
+//
+// The human reviews the suggestion before actually sending anything.
+model AiSuggestion {
+  // Primary key: uniquely identifies each AI suggestion
+  aiSuggestionId String @id @default(uuid())
+
+  // Foreign key -> Message
+  messageId String
+
+  // What kind of suggestion the AI generated
+  suggestionType String
+
+  // The actual response/action suggested by AI
+  suggestedText String
+
+  // AI's confidence in the suggestion
+  confidenceScore Float?
+
+  // Whether the human accepted the suggestion
+  isAccepted Boolean @default(false)
+
+  // When the suggestion was generated
+  createdAt DateTime @default(now())
+
+  // This suggestion was generated for one message
+  message Message @relation(fields: [messageId], references: [messageId])
+}
+
+
+// ============================================================
+// TASK
+// ============================================================
+// A Task represents a follow-up/action that the workspace needs to do.
+//
+// Example:
+// "Follow up with Rahul about the enterprise demo."
+model Task {
+  // Primary key: uniquely identifies each task
+  taskId String @id @default(uuid())
+
+  // Foreign key -> Workspace
+  workspaceId String
+
+  // Optional foreign key -> Contact
+  contactId String?
+
+  // Task information
+  title       String
+  description String?
+
+  // Task state
+  status String @default("PENDING")
+
+  // When the task should be completed
+  dueAt DateTime?
+
+  // Automatically records when the task was created
+  createdAt DateTime @default(now())
+
+  // This task belongs to one workspace
+  workspace Workspace @relation(fields: [workspaceId], references: [workspaceId])
+
+  // Task can optionally be related to one contact
+  contact Contact? @relation(fields: [contactId], references: [contactId])
+}
+
+
+// ============================================================
+// DOCUMENT
+// ============================================================
+// A Document contains company/product knowledge used by the RAG system.
+//
+// Examples:
+// pricing.pdf
+// FAQ.pdf
+// product-documentation.pdf
+model Document {
+  // Primary key: uniquely identifies each document
+  documentId String @id @default(uuid())
+
+  // Foreign key -> Workspace
+  workspaceId String
+
+  // Document information
+  name         String
+  fileUrl      String?
+  documentType String?
+  status       String @default("ACTIVE")
+
+  // When the document was added
+  createdAt DateTime @default(now())
+
+  // This document belongs to one workspace
+  workspace Workspace @relation(fields: [workspaceId], references: [workspaceId])
+
+  // One document is divided into many chunks
+  chunks DocumentChunk[]
+}
+
+
+// ============================================================
+// DOCUMENT CHUNK
+// ============================================================
+// A large document is divided into smaller pieces for RAG.
+//
+// Example:
+// Pricing.pdf
+//   -> Chunk 1
+//   -> Chunk 2
+//   -> Chunk 3
+//
+// The AI searches these chunks instead of sending the whole document
+// to the LLM every time.
+model DocumentChunk {
+  // Primary key: uniquely identifies each chunk
+  chunkId String @id @default(uuid())
+
+  // Foreign key -> Document
+  documentId String
+
+  // The actual piece of text extracted from the document
+  content String
+
+  // Position of this chunk inside the document
+  chunkIndex Int
+
+  // Temporary/simple representation of the vector embedding.
+  // Later, for PostgreSQL + pgvector, this should be changed to a
+  // proper vector column using the pgvector setup we choose.
+  embedding Json?
+
+  // This chunk belongs to one document
+  document Document @relation(fields: [documentId], references: [documentId])
+
+  // When the chunk was created
+  createdAt DateTime @default(now())
+}
+
+
+// ============================================================
+// CONTACT FACT
+// ============================================================
+// Stores important information the AI learns about a particular lead.
+//
+// Example:
+// "Rahul is interested in the Enterprise plan."
+// "Rahul wants a demo next week."
+model ContactFact {
+  // Primary key
+  contactFactId String @id @default(uuid())
+
+  // Foreign key -> Contact
+  contactId String
+
+  // The information learned about the contact
+  fact String
+
+  // Where this fact came from
+  source String?
+
+  // AI's confidence in this fact
+  confidenceScore Float?
+
+  // Whether this fact is currently valid
+  isActive Boolean @default(true)
+
+  // When the fact was created
+  createdAt DateTime @default(now())
+
+  // This fact belongs to one contact
+  contact Contact @relation(fields: [contactId], references: [contactId])
+}
+
+
+// ============================================================
+// CONTACT SCORE
+// ============================================================
+// Stores the AI's assessment of a lead/contact.
+//
+// Example:
+// Lead score = 85
+// Intent = HIGH
+model ContactScore {
+  // Primary key
+  contactScoreId String @id @default(uuid())
+
+  // Foreign key -> Contact
+  contactId String
+
+  // Overall score assigned to the contact
+  score Float
+
+  // AI's interpretation of the score
+  scoreType String?
+
+  // Optional explanation for the score
+  reason String?
+
+  // When this score was generated
+  createdAt DateTime @default(now())
+
+  // This score belongs to one contact
+  contact Contact @relation(fields: [contactId], references: [contactId])
+}
+
+
+// ============================================================
+// CONVERSATION SUMMARY
+// ============================================================
+// Stores an AI-generated summary of a conversation.
+//
+// Instead of reading hundreds of messages every time,
+// the system can use the latest summary as conversation memory.
+model ConversationSummary {
+  // Primary key
+  summaryId String @id @default(uuid())
+
+  // Foreign key -> Conversation
+  conversationId String
+
+  // AI-generated summary
+  summary String
+
+  // Version of the summary
+  version Int @default(1)
+
+  // When the summary was generated
+  createdAt DateTime @default(now())
+
+  // This summary belongs to one conversation
+  conversation Conversation @relation(fields: [conversationId], references: [conversationId])
 }

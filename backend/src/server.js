@@ -1,3 +1,5 @@
+// Main Express entry point; starts the backend server
+
 const express = require('express');
 const cors = require('cors');
 const prisma = require('./lib/prisma');
