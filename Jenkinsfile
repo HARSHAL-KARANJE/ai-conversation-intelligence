@@ -52,4 +52,20 @@ pipeline {
             }
         }
     }
+
+    // The post section is used to define actions that should be taken after the pipeline has completed.(giving update to the github after sucess of the jenkins)
+    
+     post {
+        always {
+            publishChecks(
+                name: 'Jenkins CI',
+                status: 'COMPLETED',
+                conclusion: currentBuild.currentResult == 'SUCCESS'
+                    ? 'SUCCESS'
+                    : 'FAILURE',
+                summary: "Jenkins CI: ${currentBuild.currentResult}",
+                detailsURL: env.BUILD_URL
+            )
+        }
+    }
 }
